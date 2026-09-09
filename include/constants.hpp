@@ -67,6 +67,8 @@ constexpr uint32_t CONTROL_LOOP_TASK_STACK_SIZE = 8192;
 constexpr uint8_t  CONTROL_LOOP_TASK_PRIORITY   = 10;
 constexpr uint32_t LOOP_DELAY_MS                = 10;
 
+const uint8_t ABS_ENCODER_READ_PERIOD_MS = 2;
+
 constexpr std::array<double, 3> STEER_ZERO_ANGLE_DEG = {45.0, 165.0, 285.0}; // 各ステア原点
 
 constexpr double DRIVE_RADIUS = 50;

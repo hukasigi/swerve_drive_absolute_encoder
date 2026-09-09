@@ -53,8 +53,6 @@ class Steering {
         double        target_degree;
         double        offset_degree;
         const uint8_t ID;
-
-        static const uint32_t CALIBRATING_TIMEOUT_MS = 8000;
 };
 
 class Drive {
@@ -235,92 +233,6 @@ SwerveDrive swerve_drive_3(&drive_3, &steering_3, 3);
 SwerveDrive*     swerve_drives[]    = {&swerve_drive_1, &swerve_drive_2, &swerve_drive_3};
 constexpr size_t NUM_SWERVE_MODULES = 3;
 
-struct CalibrationContext {
-        // どの独ステ
-        SwerveDrive* module;
-        // どのイベントグループ
-        EventGroupHandle_t events;
-        // どの完了ビット
-        EventBits_t done_bit;
-        // 原点取り成功したかどうか
-        bool success;
-};
-
-void calibration_task(void* parameter) {
-    // calibrationContextに変換
-    auto* context = static_cast<CalibrationContext*>(parameter);
-
-    // 0点取り実行
-    context->success = context->module->init();
-
-    if (!context->success) {
-        Serial.println("Calibration failed");
-    }
-    // 終わったら通知
-    xEventGroupSetBits(context->events, context->done_bit);
-    // タスク終了
-    vTaskDelete(nullptr);
-}
-
-bool initialize_swerve_drives() {
-    // FreeRTOSのイベントグループを作ってる。通知をまとめて管理できる。
-    EventGroupHandle_t events = xEventGroupCreate();
-    // イベントグループの作成失敗
-    if (events == nullptr) {
-        return false;
-    }
-
-    // CalibrationContextの作成
-    CalibrationContext contexts[NUM_SWERVE_MODULES];
-    // 作成に成功したタスクの完了ビット
-    EventBits_t created_bits = 0;
-
-    for (size_t i = 0; i < NUM_SWERVE_MODULES; ++i) {
-        // Contextを設定
-        contexts[i] = {
-            swerve_drives[i],
-            events,
-            // 符号なし整数をビット操作　完了ビットを分けてる
-            static_cast<EventBits_t>(1U << i),
-            false,
-        };
-
-        // キャリブレーションタスクを作ってる。3つのキャリブレーションを並行に実行
-        if (xTaskCreate(calibration_task, "CalibrationTask", 4096, &contexts[i], 10, nullptr) != pdPASS) {
-
-            // ここまでに作成されたタスクがあれば、
-            // それらの終了を待つ
-            if (created_bits != 0) {
-                xEventGroupWaitBits(events, created_bits, pdTRUE, pdTRUE, portMAX_DELAY);
-            }
-            vEventGroupDelete(events);
-            return false;
-        }
-
-        // このタスクの作成に成功した
-        created_bits |= static_cast<EventBits_t>(1U << i);
-    }
-
-    // すべてのモジュールが原点取りに成功したかを表す。1000 - 0001 = 0111
-    const EventBits_t all_done = static_cast<EventBits_t>((1U << NUM_SWERVE_MODULES) - 1U);
-
-    // 全モジュールのキャリブレーションが終わるまで待つ
-    xEventGroupWaitBits(events, all_done, pdTRUE, pdTRUE, portMAX_DELAY);
-
-    // 全モジュールの成功/失敗を確認
-    for (size_t i = 0; i < NUM_SWERVE_MODULES; ++i) {
-        if (!contexts[i].success) {
-            vEventGroupDelete(events);
-            return false;
-        }
-    }
-
-    // EventGroupはもう不要
-    vEventGroupDelete(events);
-
-    return true;
-}
-
 void drive_pid_reset() {
     drive_pid_1.reset();
     drive_pid_2.reset();
@@ -455,8 +367,20 @@ void control_loop_task(void* args) {
     }
 }
 
+bool initialize_swerve_drives() {
+    for (size_t i = 0; i < NUM_SWERVE_MODULES; i++) {
+        if (!swerve_drives[i]->init()) {
+            return false;
+        }
+    }
+
+    return true;
+}
 void setup() {
     Serial.begin(115200);
+
+    SPI.begin();
+
     if (!can.begin()) {
         Serial.println("CAN begin failed");
         while (true) {
@@ -469,7 +393,10 @@ void setup() {
         while (true) {
         }
     }
+    nnct::Amt223dv::beginStatic(&SPI, ABS_ENCODER_READ_PERIOD_MS);
+
     PS4.begin("08:d1:f9:37:41:f2");
+
     xTaskCreate(control_loop_task, "ControlLoopTask", CONTROL_LOOP_TASK_STACK_SIZE, NULL, CONTROL_LOOP_TASK_PRIORITY,
                 &control_loop_task_handle);
 }
