@@ -12,34 +12,31 @@ using pin_t = uint8_t;
 using ch_t  = uint8_t;
 
 // ステアリング1
-const pin_t  STEERING_MOTOR_DIR_1 = 23;
-const pin_t  STEERING_MOTOR_PWM_1 = 22;
-const ch_t   STEERING_MOTOR_CH_1  = 0;
-const id_t   DRIVE_MOTOR_ID_1     = 0x01;
-const pin_t  STEERING_ENCODER_A_1 = 27;
-const pin_t  STEERING_ENCODER_B_1 = 14;
-const pin_t  STEERING_LIMIT_SW_1  = 36;
-const double OFFSET_DEG_1         = 45.;
+const pin_t  STEERING_MOTOR_DIR_1      = 23;
+const pin_t  STEERING_MOTOR_PWM_1      = 22;
+const ch_t   STEERING_MOTOR_CH_1       = 0;
+const id_t   DRIVE_MOTOR_ID_1          = 0x01; // TODO:変更
+const pin_t  STEERING_ABS_ENCODER_CS_1 = 27;
+const pin_t  STEERING_LIMIT_SW_1       = 36;
+const double OFFSET_DEG_1              = 45.;
 
 // ステアリング2
-const pin_t  STEERING_MOTOR_DIR_2 = 21;
-const pin_t  STEERING_MOTOR_PWM_2 = 19;
-const ch_t   STEERING_MOTOR_CH_2  = 1;
-const id_t   DRIVE_MOTOR_ID_2     = 0x02;
-const pin_t  STEERING_ENCODER_A_2 = 25;
-const pin_t  STEERING_ENCODER_B_2 = 26;
-const pin_t  STEERING_LIMIT_SW_2  = 39;
-const double OFFSET_DEG_2         = 165.;
+const pin_t  STEERING_MOTOR_DIR_2      = 21;
+const pin_t  STEERING_MOTOR_PWM_2      = 19;
+const ch_t   STEERING_MOTOR_CH_2       = 1;
+const id_t   DRIVE_MOTOR_ID_2          = 0x02;
+const pin_t  STEERING_ABS_ENCODER_CS_2 = 25;
+const pin_t  STEERING_LIMIT_SW_2       = 39;
+const double OFFSET_DEG_2              = 165.;
 
 // ステアリング3
-const pin_t  STEERING_MOTOR_DIR_3 = 18;
-const pin_t  STEERING_MOTOR_PWM_3 = 17;
-const ch_t   STEERING_MOTOR_CH_3  = 2;
-const id_t   DRIVE_MOTOR_ID_3     = 0x04;
-const pin_t  STEERING_ENCODER_A_3 = 32;
-const pin_t  STEERING_ENCODER_B_3 = 33;
-const pin_t  STEERING_LIMIT_SW_3  = 34;
-const double OFFSET_DEG_3         = 285.;
+const pin_t  STEERING_MOTOR_DIR_3      = 18;
+const pin_t  STEERING_MOTOR_PWM_3      = 17;
+const ch_t   STEERING_MOTOR_CH_3       = 2;
+const id_t   DRIVE_MOTOR_ID_3          = 0x04;
+const pin_t  STEERING_ABS_ENCODER_CS_3 = 32;
+const pin_t  STEERING_LIMIT_SW_3       = 34;
+const double OFFSET_DEG_3              = 285.;
 
 const pin_t CAN_RX_PIN = 4; // 実際の配線に合わせて変更
 const pin_t CAN_TX_PIN = 5; // 実際の配線に合わせて変更

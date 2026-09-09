@@ -10,69 +10,31 @@ using namespace nnct::interfaces;
 
 class Steering {
     public:
-        Steering(Motor* motor, IncrementalEncoder* encoder, LimitSwitch* limit_switch, AnglePID* pid, double offset_deg,
-                 uint8_t ID)
-            : motor(motor), encoder(encoder), limit_switch(limit_switch), pid(pid), target_degree(0), offset_degree(offset_deg),
-              ID(ID) {}
-        bool calibrate_zero() { // 0点合わせ
-            uint32_t startTime = millis();
-            this->motor->run(CALIBRATING_DUTY);
-            if (this->limit_switch->active()) { // ONから始まったら、一度OFFになるまで待つ
-                this->motor->run(-CALIBRATING_DUTY);
-                while (this->limit_switch->active()) {
-                    if (millis() - startTime > CALIBRATING_TIMEOUT_MS) {
-                        this->motor->stop();
-                        return false;
-                    }
-                    delay(1);
-                }
-                this->motor->stop();
-                this->encoder->clear();
-                this->motor->run(CALIBRATING_DUTY);
-            }
+        Steering(Motor* motor, nnct::Amt223dv* encoder, AnglePID* pid, double offset_deg, uint8_t ID)
+            : motor(motor), encoder(encoder), pid(pid), target_degree(0), offset_degree(offset_deg), ID(ID) {}
 
-            while (!this->limit_switch->active()) { // OFF→ONになるまで待つ
-                if (millis() - startTime > CALIBRATING_TIMEOUT_MS) {
-                    this->motor->stop();
-                    return false;
-                }
-                delay(1);
-            }
-            this->motor->stop();
-
-            // offset を encoder count に埋め込む
-            int32_t offset_count =
-                static_cast<int32_t>(this->offset_degree * ENCODER_RESOLUTION * STEER_GEAR_RATIO_MOTOR_TO_STEER / 360.0);
-            this->encoder->setCount(offset_count);
-            return true;
+        void begin() {
+            encoder->begin();
+            motor->stop();
         }
+
         void   set_target(double degree) { this->target_degree = degree; }
         double get_current_degree() {
-            double degree = (encoder->getCount() * 360.0 / ENCODER_RESOLUTION) / STEER_GEAR_RATIO_MOTOR_TO_STEER;
-
-            return normalizeAngleDeg(degree);
+            // 絶対角度からオフセットを減算
+            const double absolute_degree = static_cast<double>(encoder->positionDeg());
+            return normalizeAngleDeg(absolute_degree - offset_degree);
         }
-        int32_t get_encoder_count() const { return encoder->getCount(); }
-        void    update(double dt) {
-            double current_degree = this->get_current_degree();
-            double duty           = this->pid->update(this->target_degree, current_degree, dt);
-            double error          = pid->getError();
+        void update(double dt) {
+            const double current_degree = get_current_degree();
+            double       duty           = pid->update(target_degree, current_degree, dt);
+            const double error          = pid->getError();
 
-            const double dead_zone = 1.0;
-            if (fabs(error) < dead_zone) {
+            constexpr double DEAD_ZONE_DEG = 1.0;
+            if (fabs(error) < DEAD_ZONE_DEG) {
                 duty = 0.0;
-                // this->pid->reset();
             }
 
-            // static uint32_t last_print_time = 0;
-            // const uint32_t  now             = millis();
-
-            // if (now - last_print_time >= 1000) {
-            //     last_print_time = now;
-            //     Serial.printf("id:%d target: %.1f current: %.1f duty: %.1f\n", ID, target_degree, current_degree, duty);
-            // }
-
-            this->motor->run(duty, -1);
+            motor->run(duty, -1);
         }
 
     private:
@@ -84,14 +46,12 @@ class Steering {
             return a;
         }
 
-        Motor*              motor;
-        IncrementalEncoder* encoder;
-        LimitSwitch*        limit_switch;
-        AnglePID*           pid;
+        Motor*          motor;
+        nnct::Amt223dv* encoder;
+        AnglePID*       pid;
 
-        double target_degree;
-        double offset_degree;
-
+        double        target_degree;
+        double        offset_degree;
         const uint8_t ID;
 
         static const uint32_t CALIBRATING_TIMEOUT_MS = 8000;
@@ -132,14 +92,6 @@ class Drive {
 
                 drive_command = pid->update(target_mm_s, current_mm_s, dt);
 
-                // static uint32_t last_print_time = 0;
-                // const uint32_t  now             = millis();
-
-                // if (now - last_print_time >= 1000) {
-                //     last_print_time = now;
-                //     Serial.printf("id:%d target: %.1f current: %.1f duty: %.1f\n", ID, target_mm_s, current_mm_s,
-                //                   drive_command);
-                // }
             } else {
                 drive_command = target_duty;
             }
@@ -169,9 +121,7 @@ class SwerveDrive {
     public:
         SwerveDrive(Drive* drive, Steering* steering, uint8_t ID) : drive(drive), steering(steering), ID(ID) {}
         bool init() {
-            if (!this->steering->calibrate_zero()) {
-                return false;
-            }
+            steering->begin();
             return true;
         }
 
@@ -241,26 +191,23 @@ class SwerveDrive {
 
 TaskHandle_t control_loop_task_handle;
 
-Motor              steering_motor_1(STEERING_MOTOR_DIR_1, STEERING_MOTOR_PWM_1, STEERING_MOTOR_CH_1);
-IncrementalEncoder steering_encoder_1(STEERING_ENCODER_A_1, STEERING_ENCODER_B_1);
-LimitSwitch        steering_limit_switch_1(STEERING_LIMIT_SW_1);
-AnglePID           steering_pid_1(STEERING_PID_PARAM.p_gain, STEERING_PID_PARAM.i_gain, STEERING_PID_PARAM.d_gain,
-                                  -STEER_MOTOR_POWER_LIMIT, STEER_MOTOR_POWER_LIMIT, -STEER_INTEGRAL_LIMIT, STEER_INTEGRAL_LIMIT, RANGE);
-Steering steering_1(&steering_motor_1, &steering_encoder_1, &steering_limit_switch_1, &steering_pid_1, OFFSET_DEG_1, 1);
+Motor          steering_motor_1(STEERING_MOTOR_DIR_1, STEERING_MOTOR_PWM_1, STEERING_MOTOR_CH_1);
+AnglePID       steering_pid_1(STEERING_PID_PARAM.p_gain, STEERING_PID_PARAM.i_gain, STEERING_PID_PARAM.d_gain,
+                              -STEER_MOTOR_POWER_LIMIT, STEER_MOTOR_POWER_LIMIT, -STEER_INTEGRAL_LIMIT, STEER_INTEGRAL_LIMIT, RANGE);
+nnct::Amt223dv steering_encoder_1(STEERING_ABS_ENCODER_CS_1);
+Steering       steering_1(&steering_motor_1, &steering_encoder_1, &steering_pid_1, OFFSET_DEG_1, 1);
 
-Motor              steering_motor_2(STEERING_MOTOR_DIR_2, STEERING_MOTOR_PWM_2, STEERING_MOTOR_CH_2);
-IncrementalEncoder steering_encoder_2(STEERING_ENCODER_A_2, STEERING_ENCODER_B_2);
-LimitSwitch        steering_limit_switch_2(STEERING_LIMIT_SW_2);
-AnglePID           steering_pid_2(STEERING_PID_PARAM.p_gain, STEERING_PID_PARAM.i_gain, STEERING_PID_PARAM.d_gain,
-                                  -STEER_MOTOR_POWER_LIMIT, STEER_MOTOR_POWER_LIMIT, -STEER_INTEGRAL_LIMIT, STEER_INTEGRAL_LIMIT, RANGE);
-Steering steering_2(&steering_motor_2, &steering_encoder_2, &steering_limit_switch_2, &steering_pid_2, OFFSET_DEG_2, 2);
+Motor          steering_motor_2(STEERING_MOTOR_DIR_2, STEERING_MOTOR_PWM_2, STEERING_MOTOR_CH_2);
+nnct::Amt223dv steering_encoder_2(STEERING_ABS_ENCODER_CS_2);
+AnglePID       steering_pid_2(STEERING_PID_PARAM.p_gain, STEERING_PID_PARAM.i_gain, STEERING_PID_PARAM.d_gain,
+                              -STEER_MOTOR_POWER_LIMIT, STEER_MOTOR_POWER_LIMIT, -STEER_INTEGRAL_LIMIT, STEER_INTEGRAL_LIMIT, RANGE);
+Steering       steering_2(&steering_motor_2, &steering_encoder_2, &steering_pid_2, OFFSET_DEG_2, 2);
 
-Motor              steering_motor_3(STEERING_MOTOR_DIR_3, STEERING_MOTOR_PWM_3, STEERING_MOTOR_CH_3);
-IncrementalEncoder steering_encoder_3(STEERING_ENCODER_A_3, STEERING_ENCODER_B_3);
-LimitSwitch        steering_limit_switch_3(STEERING_LIMIT_SW_3);
-AnglePID           steering_pid_3(STEERING_PID_PARAM.p_gain, STEERING_PID_PARAM.i_gain, STEERING_PID_PARAM.d_gain,
-                                  -STEER_MOTOR_POWER_LIMIT, STEER_MOTOR_POWER_LIMIT, -STEER_INTEGRAL_LIMIT, STEER_INTEGRAL_LIMIT, RANGE);
-Steering steering_3(&steering_motor_3, &steering_encoder_3, &steering_limit_switch_3, &steering_pid_3, OFFSET_DEG_3, 3);
+Motor          steering_motor_3(STEERING_MOTOR_DIR_3, STEERING_MOTOR_PWM_3, STEERING_MOTOR_CH_3);
+nnct::Amt223dv steering_encoder_3(STEERING_ABS_ENCODER_CS_3);
+AnglePID       steering_pid_3(STEERING_PID_PARAM.p_gain, STEERING_PID_PARAM.i_gain, STEERING_PID_PARAM.d_gain,
+                              -STEER_MOTOR_POWER_LIMIT, STEER_MOTOR_POWER_LIMIT, -STEER_INTEGRAL_LIMIT, STEER_INTEGRAL_LIMIT, RANGE);
+Steering       steering_3(&steering_motor_3, &steering_encoder_3, &steering_pid_3, OFFSET_DEG_3, 3);
 
 RobomasMotor drive_motor_1(DRIVE_MOTOR_ID_1);
 RobomasMotor drive_motor_2(DRIVE_MOTOR_ID_2);
